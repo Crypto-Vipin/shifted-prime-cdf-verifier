@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
-"""Deterministically verify the four certified CDF enclosures of the paper:
-*The shifted-prime Erdős–Wintner law for primitive-root determinant
-densities: extremal order, dimension zero, and Fourier decay* (V. S. Sehrawat).
+"""Deterministically verify the four certified CDF enclosures of the monograph:
+*Arithmetic limiting laws over shifted primes: dimension zero, Fourier decay,
+and absolute continuity* (V. S. Sehrawat).
 
 The verification follows the proof of the certified-enclosure proposition:
 
@@ -16,7 +15,10 @@ series to more than 200 bits.  Probability masses are propagated in IEEE-754
 binary64; the reported CDF bounds are widened by 1e-9.  That pad is
 deliberately generous: the head recurrence is an l^1-contraction whose
 standard binary64 forward-error bound is under 128u per prime, with
-u = 2^-53, hence below 7.4e-11 over the 5,131 head primes.
+u = 2^-53, hence below 7.4e-11 over the 5,131 head primes.  Summing fewer
+than 2^21 non-negative entries contributes less than 2.4e-10 even with
+sequential summation, for a total below 3.2e-10.  This implementation uses
+math.fsum for the final sums.
 
 Exit codes: 0 verified, 1 containment failure, 2 usage error, 3 output could
 not be written.
@@ -45,11 +47,12 @@ FIXED_SCALE = 10**60
 FLOAT_CDF_PAD = Decimal("1e-9")
 TRANSCENDENTAL_PAD = Decimal("1e-40")
 
+# Certified enclosures stated in the monograph.
 PUBLISHED = {
     "3": (Decimal("0.49146"), Decimal("0.49149")),
     "4": (Decimal("0.95378"), Decimal("0.95385")),
     "5": (Decimal("0.99922"), Decimal("0.99924")),
-    "3.0001": (Decimal("0.5559"), Decimal("0.5645")),
+    "3.0001": (Decimal("0.5559"), Decimal("0.5634")),
 }
 
 # beta, beta/2 (the first split threshold), beta/3 (the second threshold)
@@ -288,9 +291,11 @@ def verify() -> str:
     markov_factor_lower = max(
         Fraction(0), Fraction(1) - remaining_mean_upper / theta_lo
     )
-    small_cdf_lower = fraction_to_decimal(
-        forced_zero_lower * markov_factor_lower
-    ) - TRANSCENDENTAL_PAD
+    with localcontext() as ctx:
+        ctx.prec = 80
+        small_cdf_lower = fraction_to_decimal(
+            forced_zero_lower * markov_factor_lower
+        ) - TRANSCENDENTAL_PAD
 
     computed: dict[str, tuple[Decimal, Decimal]] = {}
     for name, _, _ in TARGETS:
@@ -330,13 +335,19 @@ def verify() -> str:
         f"float_cdf_pad={FLOAT_CDF_PAD}",
         f"head_retained_mass_up_grid={format_decimal(head.total_mass_lower_grid, 15)}",
         f"head_retained_mass_down_grid={format_decimal(head.total_mass_upper_grid, 15)}",
-        f"tail_mean_upper={format_decimal(fraction_to_decimal(mean_upper), 18)}",
-        f"tail_variance_upper={format_decimal(fraction_to_decimal(variance_upper), 24)}",
+        "tail_mean_upper="
+        f"{format_decimal(fraction_to_decimal(mean_upper), 18, rounding=ROUND_CEILING)}",
+        "tail_variance_upper="
+        f"{format_decimal(fraction_to_decimal(variance_upper), 24, rounding=ROUND_CEILING)}",
         f"bennett_shift={format_decimal(fraction_to_decimal(SHIFT), 8)}",
-        f"bennett_tail_probability_upper={format_decimal(tail_probability, 15)}",
-        f"forced_zero_probability_lower={format_decimal(fraction_to_decimal(forced_zero_lower), 15)}",
-        f"small_tail_mean_upper={format_decimal(fraction_to_decimal(remaining_mean_upper), 18)}",
-        f"small_threshold_cdf_lower={format_decimal(small_cdf_lower, 15)}",
+        "bennett_tail_probability_upper="
+        f"{format_decimal(tail_probability, 15, rounding=ROUND_CEILING)}",
+        "forced_zero_probability_lower="
+        f"{format_decimal(fraction_to_decimal(forced_zero_lower), 15, rounding=ROUND_FLOOR)}",
+        "small_tail_mean_upper="
+        f"{format_decimal(fraction_to_decimal(remaining_mean_upper), 18, rounding=ROUND_CEILING)}",
+        "small_threshold_cdf_lower="
+        f"{format_decimal(small_cdf_lower, 15, rounding=ROUND_FLOOR)}",
         "",
         "beta | verifier enclosure | manuscript enclosure | result",
     ]
@@ -366,7 +377,7 @@ def verify() -> str:
 
 
 def main() -> int:
-    # Validate arguments before the ~10 s verification, so a usage error is
+    # Validate arguments before running verification, so a usage error is
     # reported immediately.
     path: Path | None = None
     if len(sys.argv) == 3 and sys.argv[1] == "--output":
