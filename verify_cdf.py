@@ -1,28 +1,6 @@
-"""Deterministically verify the four certified CDF enclosures of the monograph:
-*Arithmetic limiting laws over shifted primes: dimension zero, Fourier decay,
-and absolute continuity* (V. S. Sehrawat).
-
-The verification follows the proof of the certified-enclosure proposition:
-
-* split off the Bernoulli variable at p=3;
-* convolve the head primes 5 <= p <= 50,000 on a monotone dyadic grid;
-* control the non-negative tail by the stated Bennett bound;
-* at beta=3.0001, use the stated forced-zero event and Markov bound with
-  secondary cutoff 2,000,000.
-
-Logarithms used to choose grid cells are enclosed by exact rational atanh
-series to more than 200 bits.  Probability masses are propagated in IEEE-754
-binary64; the reported CDF bounds are widened by 1e-9.  That pad is
-deliberately generous: the head recurrence is an l^1-contraction whose
-standard binary64 forward-error bound is under 128u per prime, with
-u = 2^-53, hence below 7.4e-11 over the 5,131 head primes.  Summing fewer
-than 2^21 non-negative entries contributes less than 2.4e-10 even with
-sequential summation, for a total below 3.2e-10.  This implementation uses
-math.fsum for the final sums.
-
-Exit codes: 0 verified, 1 containment failure, 2 usage error, 3 output could
-not be written.
-"""
+"""Vipin Singh Sehrawat
+Arithmetic limiting laws over shifted primes: Hausdorff dimension zero, Fourier decay, and absolute continuity
+arXiv:2603.11196"""
 
 from __future__ import annotations
 
@@ -42,12 +20,12 @@ SECONDARY_CUTOFF = 2_000_000
 GRID_BITS = 20
 GRID_SCALE = 1 << GRID_BITS
 LOG_BITS = 220
-SHIFT = Fraction(3, 20_000)  # 0.00015 in the Bennett lower bound
+SHIFT = Fraction(3, 20_000)
 FIXED_SCALE = 10**60
 FLOAT_CDF_PAD = Decimal("1e-9")
 TRANSCENDENTAL_PAD = Decimal("1e-40")
 
-# Certified enclosures stated in the monograph.
+
 PUBLISHED = {
     "3": (Decimal("0.49146"), Decimal("0.49149")),
     "4": (Decimal("0.95378"), Decimal("0.95385")),
@@ -55,7 +33,7 @@ PUBLISHED = {
     "3.0001": (Decimal("0.5559"), Decimal("0.5634")),
 }
 
-# beta, beta/2 (the first split threshold), beta/3 (the second threshold)
+
 TARGETS = (
     ("3", Fraction(3, 2), Fraction(1, 1)),
     ("4", Fraction(2, 1), Fraction(4, 3)),
@@ -65,7 +43,7 @@ TARGETS = (
 
 
 def sieve_primes(limit: int) -> list[int]:
-    """Return all primes <= limit by a deterministic Eratosthenes sieve."""
+
     sieve = bytearray(b"\x01") * (limit + 1)
     sieve[0:2] = b"\x00\x00"
     for p in range(2, math.isqrt(limit) + 1):
@@ -77,16 +55,8 @@ def sieve_primes(limit: int) -> list[int]:
 
 
 def log_ratio_interval(ratio: Fraction, bits: int = LOG_BITS) -> tuple[Fraction, Fraction]:
-    """Enclose log(ratio) by an exact rational atanh series.
 
-    For ratio >= 1, put z=(ratio-1)/(ratio+1).  Then
 
-        log(ratio) = 2 * sum_{k>=0} z^(2k+1)/(2k+1).
-
-    The omitted positive tail is at most the first omitted power divided by
-    its denominator and by 1-z^2.  Iteration continues until its width is
-    below 2^-bits.
-    """
     if ratio < 1:
         lo, hi = log_ratio_interval(1 / ratio, bits)
         return -hi, -lo
@@ -116,7 +86,7 @@ def floor_fraction(value: Fraction) -> int:
 def certified_grid_floor(
     ratio: Fraction, subtract: Fraction = Fraction(0)
 ) -> tuple[int, Fraction, Fraction]:
-    """Return floor(GRID_SCALE*(log(ratio)-subtract)) with a certificate."""
+
     bits = LOG_BITS
     while True:
         lo, hi = log_ratio_interval(ratio, bits)
@@ -134,7 +104,7 @@ def ceil_div(a: int, b: int) -> int:
 
 
 def fixed_upper_sum(primes: list[int], lo: int, hi: int, power: int) -> Fraction:
-    """Exact fixed-point upper bound for sum 1/(p-1)^power, lo < p <= hi."""
+
     numerator = 0
     for p in primes:
         if p <= lo:
@@ -146,7 +116,7 @@ def fixed_upper_sum(primes: list[int], lo: int, hi: int, power: int) -> Fraction
 
 
 def fixed_product_lower(primes: list[int], hi_exclusive: int) -> Fraction:
-    """Fixed-point lower bound for product_{5<=p<hi} (p-2)/(p-1)."""
+
     value = FIXED_SCALE
     for p in primes:
         if p < 5:
@@ -164,7 +134,7 @@ def fraction_to_decimal(value: Fraction, precision: int = 80) -> Decimal:
 
 
 def bennett_upper(mean_upper: Fraction, variance_upper: Fraction, b_upper: Fraction) -> Decimal:
-    """Bennett upper bound for P(R_T > SHIFT), enlarged by a decimal pad."""
+
     t_lower = SHIFT - mean_upper
     if t_lower <= 0:
         return Decimal(1)
@@ -188,7 +158,7 @@ class HeadBounds:
 
 
 def head_grid_bounds(head_primes: list[int]) -> HeadBounds:
-    """Compute monotone lower/upper head-CDF bounds on the dyadic grid."""
+
     if np.finfo(np.float64).eps != 2.0**-52:
         raise RuntimeError("This verifier requires IEEE-754 binary64.")
 
@@ -204,8 +174,7 @@ def head_grid_bounds(head_primes: list[int]) -> HeadBounds:
                 query_indices[(name, which + "_shifted")] = shifted_index
                 max_threshold = max(max_threshold, shifted_lo)
 
-    # The largest requested threshold is log(5/2)<0.917.  A small exact
-    # guard leaves all queried cells inside the retained non-negative grid.
+
     grid_length = floor_fraction(max_threshold * GRID_SCALE) + 4
 
     floor_shifts: list[int] = []
@@ -227,7 +196,7 @@ def head_grid_bounds(head_primes: list[int]) -> HeadBounds:
         total = Decimal(repr(math.fsum(float(x) for x in mass)))
         return mass, total
 
-    # R_up >= R_H gives the lower CDF bound; R_down <= R_H gives the upper.
+
     lower_mass, lower_total = propagate(ceil_shifts)
     upper_mass, upper_total = propagate(floor_shifts)
 
@@ -278,9 +247,7 @@ def verify() -> str:
     b_upper = Fraction(1, HEAD_CUTOFF)
     tail_probability = bennett_upper(mean_upper, variance_upper, b_upper)
 
-    # At beta=3.0001, theta=log(30001/30000).  Terms with p<30001
-    # individually exceed theta and are forced to vanish.  Conditional on
-    # that event, Markov is applied only to the remaining non-negative sum.
+
     small_ratio = Fraction(30_001, 30_000)
     theta_lo, _ = log_ratio_interval(small_ratio)
     forced_zero_lower = fixed_product_lower(primes, 30_001)
@@ -306,7 +273,7 @@ def verify() -> str:
         first_upper = head.upper[(name, "first")]
 
         if name == "3":
-            # The infinite remaining sum is positive almost surely.
+
             second_lower = Decimal(0)
             second_upper = Decimal(0)
         elif name == "3.0001":
@@ -377,8 +344,8 @@ def verify() -> str:
 
 
 def main() -> int:
-    # Validate arguments before running verification, so a usage error is
-    # reported immediately.
+
+
     path: Path | None = None
     if len(sys.argv) == 3 and sys.argv[1] == "--output":
         path = Path(sys.argv[2])
@@ -394,7 +361,7 @@ def main() -> int:
     try:
         path.write_text(output, encoding="utf-8")
     except OSError as exc:
-        # Distinct from exit 1, which signals a containment failure.
+
         sys.stderr.write(f"error: could not write output: {exc}\n")
         return 3
     return 0
